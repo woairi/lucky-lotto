@@ -5,6 +5,14 @@ type FeedbackTone = 'neutral' | 'success' | 'warning'
 
 const createInitialGames = (): LottoGame[] => generateGames()
 
+const getBallColorClass = (number: number) => {
+  if (number <= 10) return 'ball-yellow'
+  if (number <= 20) return 'ball-blue'
+  if (number <= 30) return 'ball-red'
+  if (number <= 40) return 'ball-gray'
+  return 'ball-green'
+}
+
 const App = () => {
   const [games, setGames] = useState<LottoGame[]>(createInitialGames)
   const [feedback, setFeedback] = useState({
@@ -106,7 +114,7 @@ const App = () => {
             </div>
             <div className="ball-row">
               {game.map((number) => (
-                <span key={number} className="ball">{number}</span>
+                <span key={number} className={`ball ${getBallColorClass(number)}`}>{number}</span>
               ))}
             </div>
           </article>
