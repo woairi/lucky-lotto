@@ -1,5 +1,13 @@
 import { useMemo, useState } from 'react'
-import { formatGames, generateGames, randomSourceLabel, randomSourceWarning, type LottoGame } from './lotto'
+import { copyTextToClipboard } from './clipboard'
+import {
+  formatGames,
+  generateGames,
+  generateGamesKeepingLocked,
+  randomSourceLabel,
+  randomSourceWarning,
+  type LottoGame,
+} from './lotto'
 
 type FeedbackTone = 'neutral' | 'success' | 'warning'
 
@@ -15,6 +23,7 @@ const getBallColorClass = (number: number) => {
 
 const App = () => {
   const [games, setGames] = useState<LottoGame[]>(createInitialGames)
+  const [lockedIndexes, setLockedIndexes] = useState<Set<number>>(() => new Set())
   const [feedback, setFeedback] = useState({
     message: '5게임을 준비했어요. 마음에 들지 않으면 바로 다시 생성해 보세요.',
     tone: 'neutral' as FeedbackTone,
@@ -24,31 +33,66 @@ const App = () => {
     return ['완전랜덤 로또 번호 생성기', formatGames(games)].join('\n\n')
   }, [games])
 
+  const lockedCount = lockedIndexes.size
+
   const regenerate = () => {
-    setGames(generateGames())
+    if (lockedCount === games.length) {
+      setFeedback({
+        message: '모든 게임이 고정되어 있어요. 하나 이상 해제하면 새 번호를 만들 수 있어요.',
+        tone: 'warning',
+      })
+      return
+    }
+
+    setGames((currentGames) => generateGamesKeepingLocked(currentGames, lockedIndexes))
     setFeedback({
-      message: '새로운 5게임을 생성했어요.',
+      message:
+        lockedCount > 0
+          ? `고정한 ${lockedCount}게임은 유지하고 나머지를 새로 생성했어요.`
+          : '새로운 5게임을 생성했어요.',
       tone: 'success',
     })
   }
 
-  const copyGames = async () => {
-    try {
-      if (!navigator.clipboard) {
-        throw new Error('clipboard unavailable')
+  const toggleLock = (index: number) => {
+    const willLock = !lockedIndexes.has(index)
+
+    setLockedIndexes((currentIndexes) => {
+      const nextIndexes = new Set(currentIndexes)
+
+      if (willLock) {
+        nextIndexes.add(index)
+      } else {
+        nextIndexes.delete(index)
       }
 
-      await navigator.clipboard.writeText(formatGames(games))
+      return nextIndexes
+    })
+    setFeedback({
+      message: willLock ? `게임 ${index + 1}을 고정했어요.` : `게임 ${index + 1} 고정을 해제했어요.`,
+      tone: 'neutral',
+    })
+  }
+
+  const copyGames = async (
+    successMessage = '5게임 번호를 클립보드에 복사했어요.',
+    successTone: FeedbackTone = 'success',
+  ) => {
+    const copied = await copyTextToClipboard(navigator.clipboard, formatGames(games))
+
+    if (copied) {
       setFeedback({
-        message: '5게임 번호를 클립보드에 복사했어요.',
-        tone: 'success',
+        message: successMessage,
+        tone: successTone,
       })
-    } catch {
-      setFeedback({
-        message: '이 브라우저에서는 복사가 제한돼 있어요. 번호를 직접 길게 눌러 복사해 주세요.',
-        tone: 'warning',
-      })
+      return true
     }
+
+    setFeedback({
+      message: '이 브라우저에서는 복사가 제한돼 있어요. 번호를 직접 길게 눌러 복사해 주세요.',
+      tone: 'warning',
+    })
+    return false
   }
 
   const shareGames = async () => {
@@ -65,11 +109,7 @@ const App = () => {
         return
       }
 
-      await copyGames()
-      setFeedback({
-        message: '이 기기에서는 공유 대신 복사로 준비했어요.',
-        tone: 'success',
-      })
+      await copyGames('이 기기에서는 공유 대신 복사로 준비했어요.')
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         setFeedback({
@@ -79,11 +119,7 @@ const App = () => {
         return
       }
 
-      await copyGames()
-      setFeedback({
-        message: '공유가 어려워 복사로 대신했어요.',
-        tone: 'warning',
-      })
+      await copyGames('공유가 어려워 복사로 대신했어요.', 'warning')
     }
   }
 
@@ -93,32 +129,53 @@ const App = () => {
         <div className="hero-copy">
           <p className="eyebrow">Lotto 6/45</p>
           <h1>완전랜덤 로또 번호 생성기</h1>
-          <p className="lead">브라우저 보안 난수를 바탕으로 5게임을 바로 생성합니다. 통계나 예측 없이, 매번 새로운 조합만 보여줍니다.</p>
+          <p className="lead">브라우저 보안 난수로 5게임을 생성합니다. 마음에 드는 조합은 고정하고 나머지만 다시 뽑을 수 있어요.</p>
+          <div className="trust-strip" aria-label="서비스 핵심 원칙">
+            <span>보안 난수 기반</span>
+            <span>예측 없음</span>
+            <span>5게임 즉시 생성</span>
+          </div>
         </div>
 
         <div className="action-row">
           <button type="button" className="primary" onClick={regenerate}>다시 생성</button>
-          <button type="button" onClick={copyGames}>복사하기</button>
+          <button type="button" className="secondary" onClick={() => void copyGames()}>복사하기</button>
           <button type="button" onClick={shareGames}>공유하기</button>
         </div>
 
-        <p className={`feedback ${feedback.tone}`}>{feedback.message}</p>
+        <p className={`feedback ${feedback.tone}`} role="status" aria-live="polite" aria-atomic="true">
+          {feedback.message}
+        </p>
       </section>
 
       <section className="games-grid" aria-label="생성된 로또 번호 5게임">
-        {games.map((game, index) => (
-          <article className="game-card" key={`${index}-${game.join('-')}`}>
-            <div className="game-header">
-              <span>게임 {index + 1}</span>
-              <span>합계 {game.reduce((sum, value) => sum + value, 0).toString().padStart(3, '0')}</span>
-            </div>
-            <div className="ball-row">
-              {game.map((number) => (
-                <span key={number} className={`ball ${getBallColorClass(number)}`}>{number}</span>
-              ))}
-            </div>
-          </article>
-        ))}
+        {games.map((game, index) => {
+          const isLocked = lockedIndexes.has(index)
+
+          return (
+            <article className={`game-card ${isLocked ? 'locked' : ''}`} key={`${index}-${game.join('-')}`}>
+              <div className="game-header">
+                <span>게임 {index + 1}</span>
+                <div className="game-meta">
+                  <span>합계 {game.reduce((sum, value) => sum + value, 0).toString().padStart(3, '0')}</span>
+                  <button
+                    type="button"
+                    className="lock-button"
+                    aria-pressed={isLocked}
+                    onClick={() => toggleLock(index)}
+                  >
+                    {isLocked ? '고정됨' : '고정'}
+                  </button>
+                </div>
+              </div>
+              <div className="ball-row">
+                {game.map((number) => (
+                  <span key={number} className={`ball ${getBallColorClass(number)}`}>{number}</span>
+                ))}
+              </div>
+            </article>
+          )
+        })}
       </section>
 
       <section className="info-grid">

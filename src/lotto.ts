@@ -41,6 +41,13 @@ const generateGame = (): LottoGame => {
 export const generateGames = (count = GAME_COUNT): LottoGame[] =>
   Array.from({ length: count }, () => generateGame())
 
+export const generateGamesKeepingLocked = (
+  currentGames: LottoGame[],
+  lockedIndexes: ReadonlySet<number>,
+  createGame: () => LottoGame = generateGame,
+): LottoGame[] =>
+  currentGames.map((game, index) => (lockedIndexes.has(index) ? game : createGame()))
+
 export const formatGames = (games: LottoGame[]) =>
   games.map((game, index) => `${index + 1}게임: ${game.join(', ')}`).join('\n')
 
